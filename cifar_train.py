@@ -12,7 +12,7 @@ import torch.utils.data
 import torch.utils.data.distributed
 from sklearn.metrics import confusion_matrix
 import numpy as np
-from torch.optim.lr_scheduler import ExponentialLR
+from torch.optim.lr_scheduler import MultiStepLR
 from utils import Progbar
 import time
 
@@ -68,8 +68,8 @@ def accuracy(output, target, topk=(1,)):
 
 if __name__ == '__main__':
     root = '/home/palm/PycharmProjects/data'
-    batch_size = 64
-    lr_exp = 0.96
+    batch_size = 256
+    lr_step = [75, 125, 175]
     init_lr = 1e-1
     transform = transforms.Compose(
         [transforms.ToTensor(),
@@ -104,11 +104,12 @@ if __name__ == '__main__':
                                 momentum=0.9,
                                 weight_decay=1e-5)
 
-    lr_schudule = ExponentialLR(optimizer, lr_exp)
+    lr_schudule = MultiStepLR(optimizer, lr_step)
 
 
     def train(train_loader, model, criterion, optimizer):
         progress = Progbar(len(train_loader))
+        top1 = AverageMeter('Acc@1', ':6.2f')
         model.train()
         for i, (images, target) in enumerate(train_loader):
             images = images.cuda()
@@ -120,14 +121,15 @@ if __name__ == '__main__':
 
             # measure accuracy and record loss
             acc1 = accuracy(output, target, topk=(1,))
+            top1.update(acc1[0], images.size(0))
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
             suffix = [('loss', loss.item()), ('acc', acc1[0].cpu().numpy())]
             progress.update(i + 1, suffix)
+        return top1.avg
 
-
-    def validate(val_loader, model, criterion, epoch=0):
+    def validate(val_loader, model, criterion):
         top1 = AverageMeter('Acc@1', ':6.2f')
         progress = Progbar(len(val_loader))
 
@@ -152,8 +154,8 @@ if __name__ == '__main__':
 
                 suffix = [('loss', loss.item()), ('acc', acc1[0].cpu().numpy())]
                 progress.update(i + 1, suffix)
-        np.save(f'opt/predict_{epoch}.npy', predicted)
-        np.save(f'opt/target_{epoch}.npy', targets)
+        # np.save(f'opt/predict_{epoch}.npy', predicted)
+        # np.save(f'opt/target_{epoch}.npy', targets)
         return top1.avg
 
 
@@ -182,20 +184,24 @@ if __name__ == '__main__':
         return cfm
 
 
-    save_folder = len(os.listdir('checkpoint'))
+    x = sorted(os.listdir('checkpoint'))
+    x = len(os.listdir(os.path.join('checkpoint', x[-1])))
+    save_folder = len(os.listdir('checkpoint')) if x > 0 else x
     os.mkdir(os.path.join('checkpoint', str(save_folder)))
     c = [31, 32, 33, 34, 35, 36, 37]
-    for i in range(40):
+    for i in range(200):
         print(f'\033[{c[int(str(time.time())[-1]) % 7]}m', 'Epoch:', i + 1)
-        train(trainloader, model, criterion, optimizer)
-        torch.save(model.state_dict(), f'checkpoint/temp.torch')
-        acc = validate(testloader, model, criterion, i + 1)
-        dct = {'net': model.state_dict(),
-               'opt': optimizer.state_dict(),
-               'acc': acc,
+        for param_group in optimizer.param_groups:
+            lr = param_group['lr']
+            break
+        train_acc = train(trainloader, model, criterion, optimizer)
+        acc = validate(testloader, model, criterion)
+        dct = {'val_acc': acc,
+               'train_acc': train_acc,
                'init_lr': init_lr,
-               'lr_exp': lr_exp,
-               'batch_size': batch_size
+               'lr_step': lr_step,
+               'batch_size': batch_size,
+               'lr': lr
                }
-        torch.save(dct, f'checkpoint/{save_folder}/final_crop_{i}_{float(acc.cpu().numpy()):.4f}.torch')
+        torch.save(dct, f'checkpoint/{save_folder}/C10_{i+1}_{float(acc.cpu().numpy()):.4f}.torch')
         lr_schudule.step(i + 1)
