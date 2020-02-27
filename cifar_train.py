@@ -89,7 +89,7 @@ if __name__ == '__main__':
                                            download=True, transform=transform)
     testloader = torch.utils.data.DataLoader(testset, batch_size=batch_size,
                                              shuffle=False, num_workers=2)
-    model = EfficientNet.from_name('efficientnet-b0', first_stride=False, ktype=True, cifar=False)
+    model = EfficientNet.from_name('efficientnet-b0', first_stride=False, ktype='oneone', cifar=False)
     model._fc = nn.Linear(model._fc.in_features, 10)
     model = nn.DataParallel(model)
     model.cuda()
@@ -185,8 +185,8 @@ if __name__ == '__main__':
 
     x = sorted(os.listdir('checkpoint'))
     x = len(os.listdir(os.path.join('checkpoint', x[-1])))
-    save_folder = len(os.listdir('checkpoint')) if x > 0 else x
-    os.mkdir(os.path.join('checkpoint', str(save_folder)))
+    save_folder = len(os.listdir('checkpoint')) if x > 0 else len(os.listdir('checkpoint')) - 1
+    os.makedirs(os.path.join('checkpoint', str(save_folder)), exist_ok=True)
     c = [31, 32, 33, 34, 35, 36, 37]
     for i in range(200):
         print(f'\033[{c[int(str(time.time())[-1]) % 7]}m', 'Epoch:', i + 1)
@@ -202,5 +202,5 @@ if __name__ == '__main__':
                'batch_size': batch_size,
                'lr': lr
                }
-        torch.save(dct, f'checkpoint/{save_folder}/C10_ori_{i + 1}_{float(acc.cpu().numpy()):.4f}.torch')
+        torch.save(dct, f'checkpoint/{save_folder}/C10_oneone_{i + 1}_{float(acc.cpu().numpy()):.4f}.torch')
         lr_schudule.step(i + 1)

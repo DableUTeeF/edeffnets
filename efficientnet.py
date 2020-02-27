@@ -12,7 +12,21 @@ from efficientnet_pytorch.utils import (
     load_pretrained_weights,
     Swish,
     MemoryEfficientSwish,
+    Conv2dDynamicSamePadding
 )
+
+
+class OneOneConv(nn.Module):
+    def __init__(self, in_channels, out_channels, kernel_size, groups=1, stride=1, bias=True):
+        super().__init__()
+        self.conv1 = Conv2dDynamicSamePadding(in_channels=in_channels, out_channels=out_channels, groups=groups,
+                               kernel_size=[kernel_size, 1], stride=stride, bias=bias)
+        self.conv2 = Conv2dDynamicSamePadding(in_channels=out_channels, out_channels=out_channels, groups=groups,
+                               kernel_size=[1, kernel_size], stride=1, bias=bias)
+
+    def forward(self, x):
+        x = self.conv2(self.conv1(x))
+        return x
 
 
 class MBConvBlock(nn.Module):
@@ -36,7 +50,10 @@ class MBConvBlock(nn.Module):
         self.id_skip = block_args.id_skip  # skip connection and drop connect
 
         # Get static or dynamic convolution depending on image size
-        Conv2d = get_same_padding_conv2d(image_size=global_params.image_size)
+        if ktype == 'oneone':
+            Conv2d = OneOneConv
+        else:
+            Conv2d = get_same_padding_conv2d(image_size=global_params.image_size)
 
         # Expansion phase
         inp = self._block_args.input_filters  # number of input channels
