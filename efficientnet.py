@@ -27,7 +27,7 @@ class MBConvBlock(nn.Module):
         has_se (bool): Whether the block contains a Squeeze and Excitation layer.
     """
 
-    def __init__(self, block_args, global_params):
+    def __init__(self, block_args, global_params, ktype):
         super().__init__()
         self._block_args = block_args
         self._bn_mom = 1 - global_params.batch_norm_momentum
@@ -46,11 +46,12 @@ class MBConvBlock(nn.Module):
             self._bn0 = nn.BatchNorm2d(num_features=oup, momentum=self._bn_mom, eps=self._bn_eps)
 
         # Depthwise convolution phase
-        self.k = self._block_args.kernel_size
+        k = 3 if ktype != 'ori' else self._block_args.kernel_size
+        self.k = self._block_args.kernel_size if ktype != 'ori' else 3
         s = self._block_args.stride
         self._depthwise_conv = Conv2d(
             in_channels=oup, out_channels=oup, groups=oup,  # groups makes it depthwise
-            kernel_size=3, stride=s, bias=False)
+            kernel_size=k, stride=s, bias=False)
         self._bn1 = nn.BatchNorm2d(num_features=oup, momentum=self._bn_mom, eps=self._bn_eps)
         if self.k == 5:
             self._depthwise_conv_k = Conv2d(
@@ -126,7 +127,7 @@ class EfficientNet(nn.Module):
 
     """
 
-    def __init__(self, blocks_args=None, global_params=None, first_stride=True):
+    def __init__(self, blocks_args=None, global_params=None, first_stride=True, ktype=False):
         super().__init__()
         assert isinstance(blocks_args, list), 'blocks_args should be a list'
         assert len(blocks_args) > 0, 'block args must be greater than 0'
@@ -159,11 +160,11 @@ class EfficientNet(nn.Module):
             )
 
             # The first block needs to take care of stride and filter size increase.
-            self._blocks.append(MBConvBlock(block_args, self._global_params))
+            self._blocks.append(MBConvBlock(block_args, self._global_params, ktype))
             if block_args.num_repeat > 1:
                 block_args = block_args._replace(input_filters=block_args.output_filters, stride=1)
             for _ in range(block_args.num_repeat - 1):
-                self._blocks.append(MBConvBlock(block_args, self._global_params))
+                self._blocks.append(MBConvBlock(block_args, self._global_params, ktype))
 
         # Head
         in_channels = block_args.output_filters  # output of final block
@@ -216,10 +217,12 @@ class EfficientNet(nn.Module):
         return x
 
     @classmethod
-    def from_name(cls, model_name, override_params=None, first_stride=True):
+    def from_name(cls, model_name, override_params=None, first_stride=True, ktype='ori', cifar=False):
         cls._check_model_name_is_valid(model_name)
         blocks_args, global_params = get_model_params(model_name, override_params)
-        return cls(blocks_args, global_params, first_stride)
+        if cifar:
+            blocks_args[5].stride = [1]
+        return cls(blocks_args, global_params, first_stride, ktype)
 
     @classmethod
     def from_pretrained(cls, model_name, num_classes=1000, in_channels=3):
@@ -255,5 +258,5 @@ class EfficientNet(nn.Module):
 
 
 if __name__ == '__main__':
-    m = EfficientNet.from_name('efficientnet-b6')
+    m = EfficientNet.from_name('efficientnet-b0', ktype=True)
     print(m)

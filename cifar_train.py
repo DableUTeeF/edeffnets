@@ -68,30 +68,28 @@ def accuracy(output, target, topk=(1,)):
 
 if __name__ == '__main__':
     root = '/home/palm/PycharmProjects/data'
-    batch_size = 256
+    batch_size = 128
     lr_step = [75, 125, 175]
     init_lr = 1e-1
     transform = transforms.Compose(
         [transforms.ToTensor(),
-         transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))])
+         transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010))])  # todo: (0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)
     train_transform = transforms.Compose(
-        [transforms.RandomHorizontalFlip(),
-         transforms.RandomRotation(15),
-         transforms.RandomAffine(10),
-         transforms.RandomVerticalFlip(),
+        [transforms.RandomCrop(32, padding=4),
+         transforms.RandomHorizontalFlip(),
          transforms.ToTensor(),
-         transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))])
+         transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010))])
 
     trainset = torchvision.datasets.CIFAR10(root=root, train=True,
-                                             download=True, transform=train_transform)
+                                            download=True, transform=train_transform)
     trainloader = torch.utils.data.DataLoader(trainset, batch_size=batch_size,
                                               shuffle=True, num_workers=2)
 
     testset = torchvision.datasets.CIFAR10(root=root, train=False,
-                                            download=True, transform=transform)
+                                           download=True, transform=transform)
     testloader = torch.utils.data.DataLoader(testset, batch_size=batch_size,
                                              shuffle=False, num_workers=2)
-    model = EfficientNet.from_name('efficientnet-b0', first_stride=False)
+    model = EfficientNet.from_name('efficientnet-b0', first_stride=False, ktype=True, cifar=False)
     model._fc = nn.Linear(model._fc.in_features, 10)
     model = nn.DataParallel(model)
     model.cuda()
@@ -128,6 +126,7 @@ if __name__ == '__main__':
             suffix = [('loss', loss.item()), ('acc', acc1[0].cpu().numpy())]
             progress.update(i + 1, suffix)
         return top1.avg
+
 
     def validate(val_loader, model, criterion):
         top1 = AverageMeter('Acc@1', ':6.2f')
@@ -203,5 +202,5 @@ if __name__ == '__main__':
                'batch_size': batch_size,
                'lr': lr
                }
-        torch.save(dct, f'checkpoint/{save_folder}/C10_{i+1}_{float(acc.cpu().numpy()):.4f}.torch')
+        torch.save(dct, f'checkpoint/{save_folder}/C10_ori_{i + 1}_{float(acc.cpu().numpy()):.4f}.torch')
         lr_schudule.step(i + 1)
